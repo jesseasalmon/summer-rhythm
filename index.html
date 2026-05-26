@@ -19,8 +19,7 @@
     #root { min-height: 100vh; min-height: -webkit-fill-available; }
     * { -webkit-tap-highlight-color: transparent; }
     body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
-    input[type="range"] { -webkit-appearance: none; height: 4px; border-radius: 2px;
-      background: #2a2d34; outline: none; }
+    input[type="range"] { -webkit-appearance: none; height: 4px; border-radius: 2px; background: #2a2d34; outline: none; }
     input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px;
       border-radius: 50%; background: currentColor; cursor: pointer; }
     select { -webkit-appearance: none; appearance: none; }
@@ -340,9 +339,8 @@ function todayPhase() {
 
 function todayWeekIdx() {
   const d = new Date();
-  // Phase start dates
   const phaseStarts = {
-    pre:    new Date("2026-05-15"),
+    pre:    new Date("2026-05-18"),  // Programme started Monday May 18
     phase1: new Date("2026-06-01"),
     phase2: new Date("2026-07-01"),
     phase3: new Date("2026-08-01"),
@@ -351,7 +349,6 @@ function todayWeekIdx() {
   const start = phaseStarts[phase];
   const msPerWeek = 7 * 24 * 60 * 60 * 1000;
   const weekNum = Math.floor((d - start) / msPerWeek);
-  // Clamp to valid range for that phase
   const maxWeeks = { pre: 2, phase1: 4, phase2: 4, phase3: 4 };
   return Math.max(0, Math.min(weekNum, maxWeeks[phase] - 1));
 }
@@ -377,29 +374,28 @@ const btnStyle = (color) => ({ padding:"7px 16px", background:color, border:"non
 
 // ─── WORKOUT EDITOR COMPONENT ────────────────────────────────────────────────
 const EXERCISE_TYPES = [
-  { key:"strength", label:"Strength / Gym", fields:["sets","reps","weight"] },
-  { key:"swim",     label:"Swim / Pool",    fields:["distance","time","intervals"] },
-  { key:"cardio",   label:"Cardio",         fields:["duration","distance","avgHR"] },
-  { key:"apnea",    label:"Apnea / Static", fields:["holdTime","surfaceInterval","contractions"] },
-  { key:"breath",   label:"Breathwork",     fields:["duration","rounds"] },
-  { key:"other",    label:"Other",          fields:["duration"] },
+  { key:"swim",     label:"Swim" },
+  { key:"apnea",    label:"Apnea / UW" },
+  { key:"strength", label:"Strength" },
+  { key:"cardio",   label:"Cardio" },
+  { key:"breath",   label:"Breathwork" },
+  { key:"other",    label:"Other" },
 ];
 
-const DIFFICULTY_LABELS = ["1","2","3","4","5","6","7","8","9","10"];
+function emptySet() {
+  return { id: Date.now() + Math.random(), pulseBefore:"", pulseAfter:"", difficulty:"", notes:"" };
+}
 
-function emptyExercise() {
-  return { id: Date.now() + Math.random(), name:"", type:"strength", sets:"", reps:"", weight:"", distance:"", time:"", intervals:"", avgHR:"", holdTime:"", surfaceInterval:"", contractions:"", duration:"", rounds:"", notes:"" };
+function emptyExercise(name="", type="swim") {
+  return { id: Date.now() + Math.random(), name, type, sets:[emptySet()], detail:"" };
 }
 
 function WorkoutEditor({ dk, sessionLabel, sessionType, existingTasks, workoutData, onSave, onClose, tc, T }) {
-  const [hrBefore, setHrBefore] = useState(workoutData?.hrBefore || "");
-  const [hrAfter,  setHrAfter]  = useState(workoutData?.hrAfter  || "");
-  const [difficulty, setDifficulty] = useState(workoutData?.difficulty || "");
   const [sessionNotes, setSessionNotes] = useState(workoutData?.sessionNotes || "");
-  const [exercises, setExercises] = useState(workoutData?.exercises?.length > 0
-    ? workoutData.exercises
-    : existingTasks.map(t => ({ ...emptyExercise(), id: Date.now() + Math.random(), name: t, type: guessType(sessionType) }))
-  );
+  const [exercises, setExercises] = useState(() => {
+    if (workoutData?.exercises?.length > 0) return workoutData.exercises;
+    return existingTasks.map(t => emptyExercise(t, guessType(sessionType)));
+  });
   const [customName, setCustomName] = useState("");
 
   function guessType(st) {
@@ -411,155 +407,144 @@ function WorkoutEditor({ dk, sessionLabel, sessionType, existingTasks, workoutDa
   }
 
   function updateEx(id, field, val) {
-    setExercises(prev => prev.map(e => e.id === id ? { ...e, [field]: val } : e));
+    setExercises(prev => prev.map(e => e.id===id ? {...e,[field]:val} : e));
+  }
+
+  function updateSet(exId, setId, field, val) {
+    setExercises(prev => prev.map(e => e.id!==exId ? e : {
+      ...e, sets: e.sets.map(s => s.id!==setId ? s : {...s,[field]:val})
+    }));
+  }
+
+  function addSet(exId) {
+    setExercises(prev => prev.map(e => e.id!==exId ? e : {
+      ...e, sets: [...e.sets, emptySet()]
+    }));
+  }
+
+  function removeSet(exId, setId) {
+    setExercises(prev => prev.map(e => e.id!==exId ? e : {
+      ...e, sets: e.sets.filter(s => s.id!==setId)
+    }));
   }
 
   function addExercise() {
-    setExercises(prev => [...prev, { ...emptyExercise(), id: Date.now(), name: customName, type: guessType(sessionType) }]);
+    if (!customName) return;
+    setExercises(prev => [...prev, emptyExercise(customName, guessType(sessionType))]);
     setCustomName("");
   }
 
   function removeExercise(id) {
-    setExercises(prev => prev.filter(e => e.id !== id));
-  }
-
-  function moveEx(id, dir) {
-    setExercises(prev => {
-      const i = prev.findIndex(e => e.id === id);
-      if (i < 0) return prev;
-      const next = [...prev];
-      const swap = i + dir;
-      if (swap < 0 || swap >= next.length) return prev;
-      [next[i], next[swap]] = [next[swap], next[i]];
-      return next;
-    });
+    setExercises(prev => prev.filter(e => e.id!==id));
   }
 
   function handleSave() {
-    onSave(dk, { hrBefore, hrAfter, difficulty, sessionNotes, exercises });
+    onSave(dk, { sessionNotes, exercises });
     onClose();
   }
 
-  const iS = { background:T.input, border:`1px solid ${T.inputBorder}`, borderRadius:4, padding:"5px 8px", color:T.text, fontSize:12, fontFamily:"inherit", boxSizing:"border-box" };
+  const iS = { background:T.input, border:`1px solid ${T.inputBorder}`, borderRadius:4,
+    padding:"5px 8px", color:T.text, fontSize:12, fontFamily:"inherit", boxSizing:"border-box" };
+  const smS = { ...iS, width:64, textAlign:"center" };
 
   return (
-    <div style={{ background:T.card, border:`1px solid ${tc}55`, borderRadius:9, padding:16, marginTop:10 }}>
-      {/* Header */}
+    <div style={{ background:T.card, border:`1px solid ${tc}55`, borderRadius:9, padding:14, marginTop:10 }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
         <div>
           <span style={{ fontSize:13, color:tc }}>{sessionLabel}</span>
-          <span style={{ fontSize:11, color:T.textMid, marginLeft:8 }}>workout log</span>
+          <span style={{ fontSize:11, color:T.textMid, marginLeft:8 }}>session log</span>
         </div>
-        <button onClick={onClose} style={{ background:"none", border:"none", color:T.textFaint, cursor:"pointer", fontSize:16, fontFamily:"inherit" }}>✕</button>
+        <button onClick={onClose} style={{ background:"none", border:"none", color:T.textFaint, cursor:"pointer", fontSize:16 }}>✕</button>
       </div>
 
-      {/* Session HR + difficulty */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8, marginBottom:14 }}>
-        <div>
-          <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:T.textMid, marginBottom:4 }}>HR Before</div>
-          <input value={hrBefore} onChange={e=>setHrBefore(e.target.value)} placeholder="bpm" style={{ ...iS, width:"100%" }} />
-        </div>
-        <div>
-          <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:T.textMid, marginBottom:4 }}>HR After</div>
-          <input value={hrAfter} onChange={e=>setHrAfter(e.target.value)} placeholder="bpm" style={{ ...iS, width:"100%" }} />
-        </div>
-        <div>
-          <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:T.textMid, marginBottom:4 }}>Difficulty 1–10</div>
-          <div style={{ display:"flex", gap:3, flexWrap:"wrap" }}>
-            {DIFFICULTY_LABELS.map(d => (
-              <button key={d} onClick={() => setDifficulty(difficulty===d?"":d)} style={{
-                width:24, height:24, borderRadius:4, border:`1px solid ${difficulty===d ? tc : T.inputBorder}`,
-                background: difficulty===d ? tc+"33" : "transparent",
-                color: difficulty===d ? tc : "#556", cursor:"pointer", fontSize:11, fontFamily:"inherit", padding:0,
-              }}>{d}</button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Exercise list */}
-      <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:T.textMid, marginBottom:8 }}>Exercises</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:12 }}>
-        {exercises.map((ex, idx) => {
-          const exType = EXERCISE_TYPES.find(t => t.key === ex.type) || EXERCISE_TYPES[0];
-          return (
-            <div key={ex.id} style={{ background:T.cardAlt, border:`1px solid ${T.border}`, borderRadius:7, padding:12 }}>
-              {/* Exercise name + type row */}
-              <div style={{ display:"flex", gap:8, marginBottom:8, alignItems:"center" }}>
-                <div style={{ display:"flex", gap:4 }}>
-                  <button onClick={() => moveEx(ex.id, -1)} disabled={idx===0} style={{ background:"none", border:`1px solid ${T.inputBorder}`, borderRadius:3, padding:"2px 6px", color:T.textFaint, cursor:idx===0?"default":"pointer", fontSize:10, fontFamily:"inherit" }}>↑</button>
-                  <button onClick={() => moveEx(ex.id, 1)} disabled={idx===exercises.length-1} style={{ background:"none", border:`1px solid ${T.inputBorder}`, borderRadius:3, padding:"2px 6px", color:T.textFaint, cursor:idx===exercises.length-1?"default":"pointer", fontSize:10, fontFamily:"inherit" }}>↓</button>
-                </div>
-                <input value={ex.name} onChange={e=>updateEx(ex.id,"name",e.target.value)} placeholder="Exercise name"
-                  style={{ ...iS, flex:1 }} />
-                <select value={ex.type} onChange={e=>updateEx(ex.id,"type",e.target.value)}
-                  style={{ ...iS, background:T.input }}>
-                  {EXERCISE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-                </select>
-                <button onClick={() => removeExercise(ex.id)} style={{ background:"none", border:"none", color:T.textFaint, cursor:"pointer", fontSize:14, fontFamily:"inherit", padding:"0 4px" }}>✕</button>
-              </div>
-
-              {/* Dynamic fields based on type */}
-              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {ex.type === "strength" && (<>
-                  <div style={{ minWidth:60 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Sets</div><input value={ex.sets} onChange={e=>updateEx(ex.id,"sets",e.target.value)} placeholder="3" style={{ ...iS, width:60 }} /></div>
-                  <div style={{ minWidth:60 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Reps</div><input value={ex.reps} onChange={e=>updateEx(ex.id,"reps",e.target.value)} placeholder="12" style={{ ...iS, width:60 }} /></div>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Weight (kg/lb)</div><input value={ex.weight} onChange={e=>updateEx(ex.id,"weight",e.target.value)} placeholder="40kg" style={{ ...iS, width:80 }} /></div>
-                </>)}
-                {ex.type === "swim" && (<>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Distance</div><input value={ex.distance} onChange={e=>updateEx(ex.id,"distance",e.target.value)} placeholder="500m" style={{ ...iS, width:80 }} /></div>
-                  <div style={{ minWidth:70 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Time</div><input value={ex.time} onChange={e=>updateEx(ex.id,"time",e.target.value)} placeholder="9:30" style={{ ...iS, width:70 }} /></div>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Intervals</div><input value={ex.intervals} onChange={e=>updateEx(ex.id,"intervals",e.target.value)} placeholder="8×50m" style={{ ...iS, width:80 }} /></div>
-                </>)}
-                {ex.type === "cardio" && (<>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Duration</div><input value={ex.duration} onChange={e=>updateEx(ex.id,"duration",e.target.value)} placeholder="30 min" style={{ ...iS, width:80 }} /></div>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Distance</div><input value={ex.distance} onChange={e=>updateEx(ex.id,"distance",e.target.value)} placeholder="4km" style={{ ...iS, width:80 }} /></div>
-                  <div style={{ minWidth:70 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Avg HR</div><input value={ex.avgHR} onChange={e=>updateEx(ex.id,"avgHR",e.target.value)} placeholder="145" style={{ ...iS, width:70 }} /></div>
-                </>)}
-                {ex.type === "apnea" && (<>
-                  <div style={{ minWidth:70 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Hold time</div><input value={ex.holdTime} onChange={e=>updateEx(ex.id,"holdTime",e.target.value)} placeholder="2:30" style={{ ...iS, width:70 }} /></div>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Surface int.</div><input value={ex.surfaceInterval} onChange={e=>updateEx(ex.id,"surfaceInterval",e.target.value)} placeholder="3:00" style={{ ...iS, width:80 }} /></div>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Contractions</div><input value={ex.contractions} onChange={e=>updateEx(ex.id,"contractions",e.target.value)} placeholder="8" style={{ ...iS, width:80 }} /></div>
-                </>)}
-                {ex.type === "breath" && (<>
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Duration</div><input value={ex.duration} onChange={e=>updateEx(ex.id,"duration",e.target.value)} placeholder="20 min" style={{ ...iS, width:80 }} /></div>
-                  <div style={{ minWidth:60 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Rounds</div><input value={ex.rounds} onChange={e=>updateEx(ex.id,"rounds",e.target.value)} placeholder="10" style={{ ...iS, width:60 }} /></div>
-                </>)}
-                {ex.type === "other" && (
-                  <div style={{ minWidth:80 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Duration</div><input value={ex.duration} onChange={e=>updateEx(ex.id,"duration",e.target.value)} placeholder="30 min" style={{ ...iS, width:80 }} /></div>
-                )}
-                <div style={{ flex:1, minWidth:120 }}><div style={{ fontSize:9, color:T.textFaint, marginBottom:2 }}>Notes</div><input value={ex.notes} onChange={e=>updateEx(ex.id,"notes",e.target.value)} placeholder="How it felt..." style={{ ...iS, width:"100%" }} /></div>
-              </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:12 }}>
+        {exercises.map((ex) => (
+          <div key={ex.id} style={{ background:T.cardAlt, border:`1px solid ${T.border}`, borderRadius:8, overflow:"hidden" }}>
+            {/* Exercise header */}
+            <div style={{ background:tc+"22", borderBottom:`1px solid ${T.border}`, padding:"8px 12px", display:"flex", gap:8, alignItems:"center" }}>
+              <input value={ex.name} onChange={e=>updateEx(ex.id,"name",e.target.value)}
+                placeholder="Exercise / drill name"
+                style={{ ...iS, flex:1, background:"transparent", border:"none", fontWeight:600, fontSize:13, color:T.text, padding:"2px 0" }} />
+              <select value={ex.type} onChange={e=>updateEx(ex.id,"type",e.target.value)}
+                style={{ ...iS, fontSize:11, padding:"3px 6px" }}>
+                {EXERCISE_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+              </select>
+              <input value={ex.detail||""} onChange={e=>updateEx(ex.id,"detail",e.target.value)}
+                placeholder="e.g. 25m u/w, PT: 1:00-1:30"
+                style={{ ...iS, width:160, fontSize:11 }} />
+              <button onClick={()=>removeExercise(ex.id)} style={{ background:"none", border:"none", color:T.textFaint, cursor:"pointer", fontSize:13 }}>✕</button>
             </div>
-          );
-        })}
+
+            {/* Set rows — David Lee table format */}
+            <div style={{ padding:"8px 12px" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"28px 1fr 72px 72px 72px 28px", gap:5, marginBottom:5, alignItems:"center" }}>
+                <div style={{ fontSize:9, color:T.textFaint, textAlign:"center" }}>#</div>
+                <div style={{ fontSize:9, color:T.textFaint, textTransform:"uppercase", letterSpacing:"0.08em" }}>Notes / details</div>
+                <div style={{ fontSize:9, color:T.textFaint, textAlign:"center", lineHeight:1.2 }}>Pulse<br/>Before</div>
+                <div style={{ fontSize:9, color:T.textFaint, textAlign:"center", lineHeight:1.2 }}>Pulse<br/>After</div>
+                <div style={{ fontSize:9, color:T.textFaint, textAlign:"center", lineHeight:1.2 }}>Diff<br/>1–10</div>
+                <div />
+              </div>
+
+              {ex.sets.map((s, sIdx) => (
+                <div key={s.id} style={{ display:"grid", gridTemplateColumns:"28px 1fr 72px 72px 72px 28px", gap:5, marginBottom:5, alignItems:"center" }}>
+                  <div style={{ fontSize:11, color:T.textMid, textAlign:"center" }}>{sIdx+1}</div>
+                  <input value={s.notes} onChange={e=>updateSet(ex.id,s.id,"notes",e.target.value)}
+                    placeholder="how it felt..."
+                    style={{ ...iS, width:"100%" }} />
+                  <input value={s.pulseBefore} onChange={e=>updateSet(ex.id,s.id,"pulseBefore",e.target.value)}
+                    placeholder="X"
+                    style={{ ...smS }} />
+                  <input value={s.pulseAfter} onChange={e=>updateSet(ex.id,s.id,"pulseAfter",e.target.value)}
+                    placeholder="—"
+                    style={{ ...smS }} />
+                  <input value={s.difficulty} onChange={e=>updateSet(ex.id,s.id,"difficulty",e.target.value)}
+                    placeholder="—"
+                    style={{ ...smS }} />
+                  <button onClick={()=>removeSet(ex.id,s.id)} disabled={ex.sets.length===1}
+                    style={{ background:"none", border:"none", color:ex.sets.length===1?T.textVeryDim:T.textFaint,
+                      cursor:ex.sets.length===1?"default":"pointer", fontSize:12 }}>✕</button>
+                </div>
+              ))}
+
+              <button onClick={()=>addSet(ex.id)} style={{
+                marginTop:4, padding:"3px 12px", background:"transparent",
+                border:`1px dashed ${tc}55`, borderRadius:4, color:tc+"cc", cursor:"pointer",
+                fontSize:11, fontFamily:"inherit",
+              }}>+ set / interval</button>
+            </div>
+          </div>
+        ))}
       </div>
 
-      {/* Add exercise */}
-      <div style={{ display:"flex", gap:8, marginBottom:14, alignItems:"center" }}>
+      <div style={{ display:"flex", gap:8, marginBottom:12, alignItems:"center" }}>
         <input value={customName} onChange={e=>setCustomName(e.target.value)}
-          onKeyDown={e => e.key==="Enter" && customName && addExercise()}
-          placeholder="Add exercise..."
+          onKeyDown={e => e.key==="Enter" && addExercise()}
+          placeholder="Add exercise or drill..."
           style={{ ...iS, flex:1 }} />
-        <button onClick={() => customName && addExercise()} style={{ padding:"5px 14px", background:tc+"22", border:`1px solid ${tc}55`, borderRadius:5, color:tc, cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>+ Add</button>
+        <button onClick={addExercise} style={{ padding:"5px 14px", background:tc+"22",
+          border:`1px solid ${tc}55`, borderRadius:5, color:tc, cursor:"pointer",
+          fontSize:12, fontFamily:"inherit" }}>+ Add</button>
       </div>
 
-      {/* Session notes */}
       <div style={{ marginBottom:14 }}>
         <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:T.textMid, marginBottom:4 }}>Session notes</div>
         <textarea value={sessionNotes} onChange={e=>setSessionNotes(e.target.value)}
-          placeholder="Overall how it went, what to adjust next time, how you felt..."
-          style={{ ...iS, width:"100%", minHeight:60, resize:"vertical" }} />
+          placeholder="Overall how it went, what to adjust, how you felt..."
+          style={{ ...iS, width:"100%", minHeight:55, resize:"vertical" }} />
       </div>
 
-      {/* Save / Cancel */}
       <div style={{ display:"flex", gap:8 }}>
-        <button onClick={handleSave} style={{ padding:"7px 20px", background:tc, border:"none", borderRadius:5, color:T.bg, cursor:"pointer", fontSize:12, fontFamily:"inherit", fontWeight:600 }}>Save workout</button>
-        <button onClick={onClose} style={{ padding:"7px 14px", background:"transparent", border:`1px solid ${T.inputBorder}`, borderRadius:5, color:T.textDim, cursor:"pointer", fontSize:12, fontFamily:"inherit" }}>Cancel</button>
+        <button onClick={handleSave} style={{ padding:"7px 20px", background:tc, border:"none",
+          borderRadius:5, color:"#fff", cursor:"pointer", fontSize:12, fontFamily:"inherit", fontWeight:600 }}>Save session</button>
+        <button onClick={onClose} style={{ padding:"7px 14px", background:"transparent",
+          border:`1px solid ${T.border}`, borderRadius:5, color:T.textMid, cursor:"pointer",
+          fontSize:12, fontFamily:"inherit" }}>Cancel</button>
       </div>
     </div>
   );
 }
+
 
 // ─── CYCLE & MOON COMPONENT ──────────────────────────────────────────────────
 const FLOW_LEVELS = [
@@ -1365,20 +1350,18 @@ function App() {
                     {/* Workout summary if logged */}
                     {todayWod && (
                       <div style={{ marginTop:10, background:tc+"0a", borderRadius:6, padding:"8px 10px", borderTop:`1px solid ${tc}22` }}>
-                        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:tc, marginBottom:5 }}>Workout logged</div>
-                        <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:4 }}>
-                          {todayWod.hrBefore && <span style={{ fontSize:12, color:T.textMid }}>HR before <span style={{ color:tc }}>{todayWod.hrBefore}</span></span>}
-                          {todayWod.hrAfter  && <span style={{ fontSize:12, color:T.textMid }}>after <span style={{ color:tc }}>{todayWod.hrAfter}</span></span>}
-                          {todayWod.difficulty && <span style={{ fontSize:12, color:T.textMid }}>difficulty <span style={{ color:tc }}>{todayWod.difficulty}/10</span></span>}
-                        </div>
-                        {todayWod.exercises?.filter(e=>e.name).slice(0,3).map((ex,i) => (
-                          <div key={i} style={{ fontSize:11, color:T.textDim }}>
-                            <span style={{ color:T.textSub }}>{ex.name}</span>
-                            {ex.sets && <span> · {ex.sets}×{ex.reps}{ex.weight?` @ ${ex.weight}`:""}</span>}
-                            {ex.holdTime && <span> · {ex.holdTime}{ex.contractions?` · ${ex.contractions} contractions`:""}</span>}
-                            {ex.distance && <span> · {ex.distance}{ex.time?` in ${ex.time}`:""}</span>}
-                          </div>
-                        ))}
+                        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:tc, marginBottom:5 }}>Session logged ✓</div>
+                        {todayWod.exercises?.filter(e=>e.name).slice(0,3).map((ex,i) => {
+                          const lastSet = ex.sets?.[ex.sets.length-1];
+                          return (
+                            <div key={i} style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>
+                              <span style={{ color:T.textSub }}>{ex.name}</span>
+                              {ex.detail && <span style={{ color:T.textFaint }}> — {ex.detail}</span>}
+                              {lastSet?.pulseAfter && <span style={{ color:tc }}> · HR after: {lastSet.pulseAfter}</span>}
+                              {lastSet?.difficulty && <span style={{ color:T.textMid }}> · diff: {lastSet.difficulty}</span>}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
 
@@ -1607,22 +1590,28 @@ function App() {
                           {/* Compact summary if logged */}
                           {wd && !isEditing && (
                             <div style={{ background:tc+"0d", border:`1px solid ${tc}33`, borderRadius:6, padding:"8px 10px", marginBottom:6 }}>
-                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
-                                <span style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:tc }}>Workout logged</span>
-                                <div style={{ display:"flex", gap:10 }}>
-                                  {wd.hrBefore && <span style={{ fontSize:11, color:T.textMid }}>HR before: <span style={{ color:tc }}>{wd.hrBefore}</span></span>}
-                                  {wd.hrAfter  && <span style={{ fontSize:11, color:T.textMid }}>after: <span style={{ color:tc }}>{wd.hrAfter}</span></span>}
-                                  {wd.difficulty && <span style={{ fontSize:11, color:T.textMid }}>diff: <span style={{ color:tc }}>{wd.difficulty}/10</span></span>}
-                                </div>
+                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                                <span style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.1em", color:tc }}>Session logged ✓</span>
+                                <span style={{ fontSize:10, color:T.textFaint }}>{wd.exercises?.filter(e=>e.name).length || 0} exercises</span>
                               </div>
                               {wd.exercises?.filter(e=>e.name).map((ex,i) => (
-                                <div key={i} style={{ fontSize:11, color:T.textDim, marginBottom:2 }}>
-                                  <span style={{ color:T.textSub }}>{ex.name}</span>
-                                  {ex.sets && <span style={{ color:T.textDim }}> · {ex.sets}×{ex.reps}{ex.weight ? ` @ ${ex.weight}` : ""}</span>}
-                                  {ex.holdTime && <span style={{ color:T.textDim }}> · {ex.holdTime}{ex.contractions ? ` · ${ex.contractions} contractions` : ""}</span>}
-                                  {ex.distance && <span style={{ color:T.textDim }}> · {ex.distance}{ex.time ? ` in ${ex.time}` : ""}</span>}
-                                  {ex.duration && !ex.distance && <span style={{ color:T.textDim }}> · {ex.duration}</span>}
-                                  {ex.notes && <span style={{ color:T.textFaint, fontStyle:"italic" }}> — {ex.notes}</span>}
+                                <div key={i} style={{ marginBottom:6 }}>
+                                  <div style={{ fontSize:12, color:T.textSub, marginBottom:2 }}>
+                                    {ex.name}
+                                    {ex.detail && <span style={{ color:T.textFaint, fontSize:11 }}> — {ex.detail}</span>}
+                                  </div>
+                                  {ex.sets?.length > 0 && (
+                                    <div style={{ display:"grid", gridTemplateColumns:"24px 60px 60px 50px", gap:4, marginLeft:8 }}>
+                                      {ex.sets.map((s,si) => (
+                                        <React.Fragment key={s.id}>
+                                          <span style={{ fontSize:10, color:T.textFaint }}>{si+1}</span>
+                                          <span style={{ fontSize:10, color:T.textMid }}>↑{s.pulseBefore||"X"}</span>
+                                          <span style={{ fontSize:10, color:tc }}>↓{s.pulseAfter||"—"}</span>
+                                          <span style={{ fontSize:10, color:T.textFaint }}>d:{s.difficulty||"—"}</span>
+                                        </React.Fragment>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               ))}
                               {wd.sessionNotes && <div style={{ fontSize:11, color:T.textDim, fontStyle:"italic", marginTop:4 }}>{wd.sessionNotes}</div>}
