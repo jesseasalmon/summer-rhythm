@@ -967,8 +967,9 @@ function App() {
   const T = makeTheme(darkMode);
   const CYCLE_PHASES = makeCyclePhases(T);
 
-  const [trainingPhase, setTrainingPhase] = useState(todayPhase());
-  const [weekIdx, setWeekIdx] = useState(todayWeekIdx());
+  // Phase and week computed from today's date every render — never stored, never stale
+  const trainingPhase = todayPhase();
+  const weekIdx = todayWeekIdx();
   const [view, setView] = useState("home");
   const [checked, setChecked] = useState({});
   const [dayNotes, setDayNotes] = useState({});
@@ -1044,17 +1045,13 @@ function App() {
         if (d.darkMode !== undefined) setDarkMode(d.darkMode);
       }
     } catch {}
-    // Always override phase and week with today's date — never load from storage
-    setTrainingPhase(todayPhase());
-    setWeekIdx(todayWeekIdx());
+    // Phase and week are computed from date — nothing to set here
   }, []);
 
   function persist(updates) {
     try {
-      // Never save trainingPhase or weekIdx — always calculated from date on load
-      const { trainingPhase: _tp, weekIdx: _wi, ...rest } = updates || {};
       const data = { checked, dayNotes, staticLog, bills, weeklyReflection, mealPlan,
-        cyclePhase, cycleDay, cycleStartDate, bleedDays, feelingsLog, workoutLog, darkMode, ...rest };
+        cyclePhase, cycleDay, cycleStartDate, bleedDays, feelingsLog, workoutLog, darkMode, ...updates };
       localStorage.setItem("rhythm_v3", JSON.stringify(data));
     } catch {}
   }
@@ -1168,13 +1165,15 @@ function App() {
             }}>
               {darkMode ? "☀️" : "🌙"}
             </button>
-            {/* Training phase selector */}
+            {/* Training phase display — auto-calculated from date */}
             {Object.entries(PHASE_META).map(([k,v]) => (
-              <button key={k} onClick={() => { setTrainingPhase(k); setWeekIdx(0); }} style={{
-                padding:"4px 11px", borderRadius:14, border:`1px solid ${trainingPhase===k ? v.color : T.border}`,
+              <div key={k} style={{
+                padding:"4px 11px", borderRadius:14,
+                border:`1px solid ${trainingPhase===k ? v.color : T.border}`,
                 background: trainingPhase===k ? v.color+"22" : "transparent",
-                color: trainingPhase===k ? v.color : T.textFaint, cursor:"pointer", fontSize:11, fontFamily:"inherit",
-              }}>{v.label}</button>
+                color: trainingPhase===k ? v.color : T.textFaint,
+                fontSize:11,
+              }}>{v.label}</div>
             ))}
           </div>
         </div>
@@ -1517,15 +1516,13 @@ function App() {
         {/* ── WEEK VIEW ── */}
         {view === "week" && (
           <div>
-            {/* Week nav */}
-            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
-              <button onClick={() => setWeekIdx(Math.max(0,weekIdx-1))} disabled={weekIdx===0} style={{ background:"none", border:`1px solid ${T.muted}`, borderRadius:5, padding:"3px 9px", color:weekIdx===0?T.textVeryDim:T.textMid, cursor:weekIdx===0?"default":"pointer", fontFamily:"inherit" }}>←</button>
-              <div style={{ flex:1 }}>
+            {/* Week info */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+              <div>
                 <span style={{ fontSize:14, color:T.text }}>Week {currentWeek.week}</span>
                 <span style={{ fontSize:11, color:T.textFaint, marginLeft:8 }}>of {weeks.length} · {PHASE_META[trainingPhase].label}</span>
               </div>
               <span style={{ fontSize:12, color:ac }}>{weekPct}%</span>
-              <button onClick={() => setWeekIdx(Math.min(weeks.length-1,weekIdx+1))} disabled={weekIdx===weeks.length-1} style={{ background:"none", border:`1px solid ${T.muted}`, borderRadius:5, padding:"3px 9px", color:weekIdx===weeks.length-1?T.textVeryDim:T.textMid, cursor:weekIdx===weeks.length-1?"default":"pointer", fontFamily:"inherit" }}>→</button>
             </div>
             <div style={{ height:2, background:T.input, borderRadius:2, marginBottom:16, overflow:"hidden" }}>
               <div style={{ height:"100%", width:`${weekPct}%`, background:ac, transition:"width 0.4s" }} />
